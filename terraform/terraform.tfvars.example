@@ -1,0 +1,5 @@
+# Copy this file to terraform.tfvars and fill in your own values.
+# terraform.tfvars should be in your .gitignore - never commit real keys/IPs if the repo is public.
+
+key_name = "your-ec2-keypair-name"     # must already exist in AWS (EC2 > Key Pairs)
+my_ip    = "49.36.XX.XX/32"            # run: curl ifconfig.me, then append /32
