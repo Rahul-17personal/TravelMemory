@@ -1,0 +1,103 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install prerequisites
+  apt:
+    name:
+      - gnupg
+      - curl
+      - ufw
+    state: present
+
+- name: Add MongoDB 7.0 GPG key
+  apt_key:
+    url: https://pgp.mongodb.com/server-7.0.asc
+    state: present
+
+- name: Add MongoDB 7.0 repository
+  apt_repository:
+    repo: "deb [arch=amd64] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse"
+    state: present
+    filename: mongodb-org-7.0
+
+- name: Install MongoDB 7.0
+  apt:
+    name: mongodb-org
+    state: present
+    update_cache: true
+
+- name: Ensure MongoDB is started and enabled
+  systemd:
+    name: mongod
+    state: started
+    enabled: true
+
+- name: Bind MongoDB to all interfaces (VPC-internal only, protected by SG)
+  lineinfile:
+    path: /etc/mongod.conf
+    regexp: '^  bindIp:'
+    line: '  bindIp: 0.0.0.0'
+  notify: restart mongod
+
+- name: Flush handlers before creating users (need mongod running with new bind config)
+  meta: flush_handlers
+
+- name: Create MongoDB admin user via mongosh
+  shell: |
+    mongosh --quiet --eval '
+    if (!db.getSiblingDB("admin").getUser("{{ mongo_admin_user }}")) {
+      db.getSiblingDB("admin").createUser({user: "{{ mongo_admin_user }}", pwd: "{{ mongo_admin_password }}", roles: ["root"]});
+      print("CREATED");
+    } else {
+      print("EXISTS");
+    }'
+  register: admin_user_result
+  changed_when: "'CREATED' in admin_user_result.stdout"
+
+- name: Create application database and user via mongosh
+  shell: |
+    mongosh --quiet --eval '
+    if (!db.getSiblingDB("{{ mongo_app_db }}").getUser("{{ mongo_app_user }}")) {
+      db.getSiblingDB("{{ mongo_app_db }}").createUser({user: "{{ mongo_app_user }}", pwd: "{{ mongo_app_password }}", roles: ["readWrite"]});
+      print("CREATED");
+    } else {
+      print("EXISTS");
+    }'
+  register: app_user_result
+  changed_when: "'CREATED' in app_user_result.stdout"
+
+- name: Enable authorization in mongod.conf
+  blockinfile:
+    path: /etc/mongod.conf
+    block: |
+      security:
+        authorization: enabled
+  notify: restart mongod
+
+- name: Flush handlers to apply auth
+  meta: flush_handlers
+
+- name: Enable ufw and allow only SSH + Mongo from VPC CIDR
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    src: "{{ vpc_cidr }}"
+  loop:
+    - "22"
+    - "27017"
+
+- name: Enable ufw
+  ufw:
+    state: enabled
+    policy: deny
+
+- name: Disable root SSH login
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin no'
+  notify: restart sshd

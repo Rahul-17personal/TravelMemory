@@ -1,0 +1,23 @@
+server {
+    listen 80;
+    server_name _;
+
+    # Serve the built React frontend
+    root /opt/travelmemory/frontend/build;
+    index index.html;
+
+    location / {
+        try_files $uri /index.html;
+    }
+
+    # Proxy API calls to the Express backend
+    location /api/ {
+        proxy_pass http://127.0.0.1:{{ backend_port }}/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_cache_bypass $http_upgrade;
+    }
+}

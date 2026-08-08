@@ -1,0 +1,112 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install prerequisites
+  apt:
+    name:
+      - curl
+      - git
+      - ufw
+      - nginx
+    state: present
+
+- name: Add NodeSource repo for Node.js 20.x
+  shell: curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  args:
+    creates: /etc/apt/sources.list.d/nodesource.list
+
+- name: Install Node.js and npm
+  apt:
+    name: nodejs
+    state: present
+    update_cache: true
+
+- name: Install pm2 globally (process manager for the Node app)
+  npm:
+    name: pm2
+    global: true
+
+- name: Clone TravelMemory repository (your fork)
+  git:
+    repo: "{{ travelmemory_repo }}"
+    dest: /opt/travelmemory
+    version: "{{ travelmemory_branch }}"
+    force: true
+
+- name: Install backend dependencies
+  npm:
+    path: /opt/travelmemory/backend
+
+- name: Install frontend dependencies
+  npm:
+    path: /opt/travelmemory/frontend
+
+- name: Create backend .env with MongoDB connection string
+  template:
+    src: backend.env.j2
+    dest: /opt/travelmemory/backend/.env
+    mode: '0600'
+
+- name: Build the React frontend for production
+  command: npm run build
+  args:
+    chdir: /opt/travelmemory/frontend
+    creates: /opt/travelmemory/frontend/build
+
+- name: Create pm2 ecosystem file for the backend
+  template:
+    src: ecosystem.config.js.j2
+    dest: /opt/travelmemory/ecosystem.config.js
+
+- name: Start backend with pm2
+  command: pm2 start /opt/travelmemory/ecosystem.config.js
+  args:
+    chdir: /opt/travelmemory
+
+- name: Save pm2 process list
+  command: pm2 save
+
+- name: Configure pm2 to start on boot
+  command: pm2 startup systemd -u ubuntu --hp /home/ubuntu
+
+- name: Configure nginx as reverse proxy (serves built frontend, proxies /api to backend)
+  template:
+    src: nginx-travelmemory.conf.j2
+    dest: /etc/nginx/sites-available/travelmemory
+  notify: restart nginx
+
+- name: Enable the nginx site
+  file:
+    src: /etc/nginx/sites-available/travelmemory
+    dest: /etc/nginx/sites-enabled/travelmemory
+    state: link
+  notify: restart nginx
+
+- name: Remove default nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: restart nginx
+
+- name: Enable ufw and allow SSH, HTTP, HTTPS
+  ufw:
+    rule: allow
+    name: "{{ item }}"
+  loop:
+    - OpenSSH
+    - "Nginx Full"
+
+- name: Enable ufw
+  ufw:
+    state: enabled
+    policy: deny
+
+- name: Disable root SSH login
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin no'
+  notify: restart sshd

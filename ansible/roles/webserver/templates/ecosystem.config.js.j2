@@ -1,0 +1,13 @@
+module.exports = {
+  apps: [
+    {
+      name: "travelmemory-backend",
+      script: "./index.js",
+      cwd: "/opt/travelmemory/backend",
+      env: {
+        NODE_ENV: "production",
+        PORT: {{ backend_port }}
+      }
+    }
+  ]
+};

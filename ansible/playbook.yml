@@ -1,0 +1,14 @@
+---
+- name: Configure and deploy TravelMemory database server
+  hosts: db
+  become: true
+  roles:
+    - database
+
+- name: Configure and deploy TravelMemory web server
+  hosts: web
+  become: true
+  vars:
+    mongo_private_ip: "{{ hostvars[groups['db'][0]]['ansible_host'] | default(groups['db'][0]) }}"
+  roles:
+    - webserver

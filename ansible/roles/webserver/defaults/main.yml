@@ -1,0 +1,7 @@
+---
+travelmemory_repo: "https://github.com/Rahul-17personal/TravelMemory.git"
+travelmemory_branch: "main"
+mongo_app_db: "travelmemory"
+mongo_app_user: "travelmemory_app"
+mongo_app_password: "CHANGE_ME_APP_PASSWORD"
+backend_port: 3000
